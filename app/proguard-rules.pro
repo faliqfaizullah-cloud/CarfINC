@@ -1,0 +1,4 @@
+-keep class com.carfinc.app.widget.** { *; }
+-keepclassmembers class * extends android.app.Activity { *; }
+-keep class com.google.mlkit.** { *; }
+-dontwarn com.google.mlkit.**

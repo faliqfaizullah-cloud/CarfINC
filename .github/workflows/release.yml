@@ -1,0 +1,77 @@
+name: Release APK
+
+# Push a tag like v1.0.0 (or run manually) to build a signed APK and publish it as a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name, e.g. 1.0.0"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Work out version
+        id: ver
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then V="${GITHUB_REF_NAME#v}"; else V="${{ github.event.inputs.version }}"; fi
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+          echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/carf-release.jks"
+            echo "CARF_KEYSTORE_PATH=$RUNNER_TEMP/carf-release.jks" >> "$GITHUB_ENV"
+            echo "CARF_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "CARF_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "CARF_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" >> "$GITHUB_ENV"
+            echo "Signing with your release keystore."
+          else
+            echo "::warning::No KEYSTORE_BASE64 secret found - signing with the debug key. Updates over a different key will fail to install; see README."
+          fi
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease -PversionName=${{ steps.ver.outputs.name }} -PversionCode=${{ steps.ver.outputs.code }} --stacktrace
+
+      - name: Name the APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/*.apk "dist/Carf-INC-v${{ steps.ver.outputs.name }}.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.ver.outputs.name) }}
+          name: Carf.INC ${{ steps.ver.outputs.name }}
+          generate_release_notes: true
+          files: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Carf-INC-release
+          path: dist/*

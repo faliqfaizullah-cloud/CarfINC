@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Carf.INC</string>
+    <string name="widget_description">Your cutout mat, right on your home screen.</string>
+    <string name="widget_empty">Open Carf.INC to make your first mat</string>
+</resources>
