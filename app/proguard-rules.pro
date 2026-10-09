@@ -1,0 +1,2 @@
+-keep class com.carfinc.app.widget.** { *; }
+-keepclassmembers class * extends android.app.Activity { *; }
