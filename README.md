@@ -15,12 +15,25 @@ grid mat, decorate it with stickers and photos, then put it on your home screen 
 | **Decorations** | 32 built-in stickers (Dynamic, Cute, Flowers, Food), 8 ready-made **Notes**, + **My stickers** from your photos. |
 | **Person cut-out stickers** | Pick a photo and only the **person** is lifted out (on-device ML Kit selfie segmentation): background removed, cropped to the person, with a white die-cut paper outline that follows the body. Photos with no person are rejected instead of adding the whole picture. |
 | **Text notes** | *Note* tool: type anything on a pink / yellow sticky, typed slip, black quote card, blue or kraft scrap. Tap a note → pencil to edit it. |
+| **Friends tab / Collective mats** | Home has two sections, **My mats** and **Friends**, with a floating glass tab bar. *Make a mat with friends* creates a shared mat with a 6-letter code (up to 5 people). Everyone adds their own cut-outs and arranges; pieces sync every 3 s and merge per piece, so two people moving different stickers never overwrite each other. Join from the inbox icon or *Join with code*. |
+| **In-app camera** | *Decorations → My stickers → Camera* opens a live camera above the mat. **Capture** cuts the **Person** (offline) or, in **Object** mode, the main subject (book, drink, camera…) and drops it on the mat. |
 | **Landscape editor** | Rotate the phone: the mat fills the left side and the controls move to a side panel. |
 | **Remix** | Re-rolls the papers, fonts and tilt of the whole name. |
 | **Home-screen widget** | 2×2 → 4×2, resizable. Always pixel-identical to the editor. Tap to open the mat. |
 | **Share / Save / Wallpaper** | Share sheet, save to `Pictures/Carf.INC`, or set as wallpaper with a preview. |
 | **Haptics** | Slider detents, selection, 45° rotation detents, confirm / reject patterns. Toggle in Settings. |
 | **Setup flow** | 3-page onboarding ending in a one-tap *Add the widget* (launcher pin request) with a manual fallback guide. |
+
+## Shared (collective) mats: one-time setup
+
+Shared mats are stored in a free Firebase Realtime Database that **you** own (no SDK or google-services.json needed):
+
+1. console.firebase.google.com → create a project → **Build → Realtime Database → Create database**.
+2. **Rules** tab → set `".read": true, ".write": true` → Publish (test-mode rules expire after 30 days, so use these).
+3. Copy the database URL (`https://….firebaseio.com`) and paste it in the app when asked, or later under *Settings → Shared mats database*.
+
+Everyone who joins your mats pastes the same URL. The 6-letter code acts as the password of a mat, so only share it with people you trust.
+Home-screen widgets of shared mats refresh when the app syncs (opening the app / editor), not by push.
 
 ## Build
 

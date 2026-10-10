@@ -3,7 +3,9 @@ package com.carfinc.app.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.carfinc.app.data.Collab
 import com.carfinc.app.model.Kind
+import com.carfinc.app.model.MatItem
 import com.carfinc.app.model.Mat
 import com.carfinc.app.model.MatFactory
 import com.carfinc.app.model.MatSize
@@ -38,13 +40,49 @@ class EditorState(initial: Mat, private val onPersist: (Mat) -> Unit) {
         return true
     }
 
+    /** Turn this mat into a collective (called after the server accepted it). */
+    fun markCollective(code: String) { mat = mat.copy(collective = true, code = code); onPersist(mat) }
+
+    /**
+     * Merge what the server sent back into the live mat without touching undo history. Only pieces
+     * the user has not touched since [snapshot] was taken are replaced, so nothing flickers mid-drag.
+     */
+    fun applyRemote(snapshot: Mat, out: Collab.SyncOutcome) {
+        val snap = snapshot.items.associateBy { it.id }
+        val outMap = out.items.associateBy { it.id }
+        val cur = mat.items.associateBy { it.id }
+        val list = ArrayList<MatItem>()
+        for (it in mat.items) {
+            val before = snap[it.id]
+            val after = outMap[it.id]
+            when {
+                before == null -> list += it                         // added after the snapshot: keep
+                it != before -> list += it                           // user is editing it: keep
+                after == null -> {}                                   // removed by someone else
+                else -> list += after
+            }
+        }
+        for ((id, o) in outMap) if (id !in cur && id !in snap) list += o   // new from friends
+        val metaSame = Collab.Meta.of(mat) == Collab.Meta.of(snapshot)
+        var next = mat.copy(items = list)
+        if (metaSame) next = out.meta.applyTo(next)
+        if (next != mat) {
+            mat = next
+            if (selectedId != null && list.none { it.id == selectedId }) selectedId = null
+            onPersist(mat)
+        }
+    }
+
     fun persist() {
         val m = mat.copy(updated = System.currentTimeMillis())
         mat = m
         onPersist(m)
     }
 
-    private fun nextId(): Long = (mat.items.maxOfOrNull { it.id } ?: 0L) + 1
+    /** Collective mats use random ids so two people adding a piece at once never collide. */
+    private fun nextId(): Long =
+        if (mat.collective) Random.nextLong(1_000_000L, 1L shl 50)
+        else (mat.items.maxOfOrNull { it.id } ?: 0L) + 1
 
     fun hit(x: Float, y: Float): Long? =
         mat.items.lastOrNull { hypot(x - it.x, y - it.y) <= MatRenderer.radius(mat, it) }?.id
@@ -125,7 +163,7 @@ class EditorState(initial: Mat, private val onPersist: (Mat) -> Unit) {
         val ky = size.h / mat.size.h
         val base = letters.size + 1L
         val stickers = mat.items.filter { it.kind == Kind.STICKER }
-            .mapIndexed { n, s -> s.copy(id = base + n, y = s.y * ky) }
+            .mapIndexed { n, s -> s.copy(id = if (mat.collective) s.id else base + n, y = s.y * ky) }
         mat = mat.copy(name = name, size = size, items = letters + stickers)
         selectedId = null
     }

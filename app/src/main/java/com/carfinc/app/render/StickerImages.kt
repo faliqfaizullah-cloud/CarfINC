@@ -20,6 +20,33 @@ object StickerImages {
 
     private fun dir(): File = File(Store.ctx.filesDir, "stickers").apply { mkdirs() }
 
+    /** Cut-outs that arrived from other people's collective mats (kept out of "My stickers"). */
+    private fun sharedDir(): File = File(Store.ctx.filesDir, "stickers_shared").apply { mkdirs() }
+
+    private fun fileFor(id: String): File? {
+        val n = id.removePrefix("img:")
+        return listOf(File(dir(), n), File(sharedDir(), n)).firstOrNull { it.exists() }
+    }
+
+    fun exists(id: String) = fileFor(id) != null
+
+    /** PNG bytes scaled to ≤ [maxDim] px for uploading to a collective mat. */
+    fun bytesForUpload(id: String, maxDim: Int = 360): ByteArray? {
+        val bmp = get(id) ?: return null
+        val s = maxDim.toFloat() / maxOf(bmp.width, bmp.height)
+        val out = if (s < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * s).toInt().coerceAtLeast(1), (bmp.height * s).toInt().coerceAtLeast(1), true) else bmp
+        val bos = java.io.ByteArrayOutputStream()
+        out.compress(Bitmap.CompressFormat.PNG, 100, bos)
+        return bos.toByteArray()
+    }
+
+    /** Store a sticker downloaded from a collective mat. */
+    @Synchronized
+    fun saveShared(id: String, png: ByteArray) {
+        File(sharedDir(), id.removePrefix("img:")).writeBytes(png)
+        cache.remove(id)
+    }
+
     fun list(): List<String> =
         dir().listFiles { f -> f.extension == "png" }
             ?.sortedByDescending { it.lastModified() }
@@ -30,8 +57,7 @@ object StickerImages {
     @Synchronized
     fun get(id: String): Bitmap? {
         cache[id]?.let { return it }
-        val f = File(dir(), id.removePrefix("img:"))
-        if (!f.exists()) return null
+        val f = fileFor(id) ?: return null
         val bmp = BitmapFactory.decodeFile(f.absolutePath) ?: return null
         cache[id] = bmp
         return bmp
@@ -77,9 +103,19 @@ object StickerImages {
      */
     fun import(uri: Uri): String? = runCatching {
         val photo = decodeUpright(uri) ?: return null
-        val person = PersonCutout.extract(photo) ?: return null
+        importBitmap(photo, CutMode.PERSON)
+    }.getOrNull()
+
+    /** Cut a person (or, for the camera's "Object" mode, any subject) out of [photo] and store it. */
+    fun importBitmap(photo: Bitmap, mode: CutMode): String? = runCatching {
+        val cut = when (mode) {
+            CutMode.PERSON -> PersonCutout.extract(photo)
+            CutMode.OBJECT -> PersonCutout.extractObject(photo)
+        } ?: return null
         val name = "cut_${System.currentTimeMillis()}.png"
-        FileOutputStream(File(dir(), name)).use { person.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        FileOutputStream(File(dir(), name)).use { cut.compress(Bitmap.CompressFormat.PNG, 100, it) }
         "img:$name"
     }.getOrNull()
 }
+
+enum class CutMode { PERSON, OBJECT }

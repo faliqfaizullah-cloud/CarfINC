@@ -29,6 +29,20 @@ data class MatItem(
     val seed: Int
 )
 
+fun MatItem.toJson(): JSONObject = JSONObject().apply {
+    put("kind", kind.name); put("key", key)
+    put("x", x.toDouble()); put("y", y.toDouble())
+    put("scale", scale.toDouble()); put("rot", rot.toDouble())
+    put("jit", jit.toDouble()); put("seed", seed)
+}
+
+fun matItemFromJson(id: Long, i: JSONObject): MatItem = MatItem(
+    id = id, kind = Kind.valueOf(i.getString("kind")), key = i.getString("key"),
+    x = i.getDouble("x").toFloat(), y = i.getDouble("y").toFloat(),
+    scale = i.getDouble("scale").toFloat(), rot = i.getDouble("rot").toFloat(),
+    jit = i.optDouble("jit", 0.0).toFloat(), seed = i.optInt("seed", 0)
+)
+
 data class Mat(
     val id: String,
     val name: String,
@@ -38,13 +52,17 @@ data class Mat(
     val paperEdge: Boolean = true,
     val letterScale: Float = 1f,
     val chaos: Float = 1f,
-    val updated: Long = System.currentTimeMillis()
+    val updated: Long = System.currentTimeMillis(),
+    /** Shared "collective" mat: everyone with the [code] sees and edits the same mat. */
+    val collective: Boolean = false,
+    val code: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("color", color)
         put("size", size.name); put("paperEdge", paperEdge)
         put("letterScale", letterScale.toDouble()); put("chaos", chaos.toDouble())
         put("updated", updated)
+        put("collective", collective); put("code", code)
         put("items", JSONArray().also { arr ->
             items.forEach { i ->
                 arr.put(JSONObject().apply {
@@ -77,7 +95,9 @@ data class Mat(
                 paperEdge = o.optBoolean("paperEdge", true),
                 letterScale = o.optDouble("letterScale", 1.0).toFloat(),
                 chaos = o.optDouble("chaos", 1.0).toFloat(),
-                updated = o.optLong("updated", System.currentTimeMillis())
+                updated = o.optLong("updated", System.currentTimeMillis()),
+                collective = o.optBoolean("collective", false),
+                code = o.optString("code", "")
             )
         }
     }

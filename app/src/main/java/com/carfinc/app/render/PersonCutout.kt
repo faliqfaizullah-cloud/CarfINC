@@ -80,6 +80,40 @@ object PersonCutout {
         }
     }
 
+    /**
+     * Camera "Object" mode: lifts the main subject (a book, a drink, a camera…) with ML Kit Subject
+     * Segmentation. The model is delivered by Google Play Services (downloads once on first use).
+     */
+    fun extractObject(src: Bitmap): Bitmap? {
+        val options = com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions.Builder()
+            .enableForegroundBitmap().build()
+        val segmenter = com.google.mlkit.vision.segmentation.subject.SubjectSegmentation.getClient(options)
+        try {
+            val result = Tasks.await(segmenter.process(InputImage.fromBitmap(src, 0)))
+            val fg = result.foregroundBitmap ?: return null
+            val w = fg.width; val h = fg.height
+            val px = IntArray(w * h)
+            fg.getPixels(px, 0, w, 0, 0, w, h)
+            var x0 = w; var y0 = h; var x1 = -1; var y1 = -1
+            for (y in 0 until h) for (x in 0 until w) {
+                if (Color.alpha(px[y * w + x]) > 24) {
+                    if (x < x0) x0 = x; if (x > x1) x1 = x
+                    if (y < y0) y0 = y; if (y > y1) y1 = y
+                }
+            }
+            if (x1 < 0 || (x1 - x0) * (y1 - y0) < w * h * 0.01f) return null
+            val pad = (maxOf(x1 - x0, y1 - y0) * 0.02f).toInt() + 1
+            x0 = (x0 - pad).coerceAtLeast(0); y0 = (y0 - pad).coerceAtLeast(0)
+            x1 = (x1 + pad).coerceAtMost(w - 1); y1 = (y1 + pad).coerceAtMost(h - 1)
+            val cw = x1 - x0 + 1; val ch = y1 - y0 + 1
+            val cut = Bitmap.createBitmap(fg, x0, y0, cw, ch)
+            val s = MAX_OUT.toFloat() / maxOf(cw, ch)
+            return if (s < 1f) Bitmap.createScaledBitmap(cut, (cw * s).toInt().coerceAtLeast(1), (ch * s).toInt().coerceAtLeast(1), true) else cut
+        } finally {
+            segmenter.close()
+        }
+    }
+
     private fun smooth(v: Float, lo: Float, hi: Float): Float {
         val t = ((v - lo) / (hi - lo)).coerceIn(0f, 1f)
         return t * t * (3f - 2f * t)

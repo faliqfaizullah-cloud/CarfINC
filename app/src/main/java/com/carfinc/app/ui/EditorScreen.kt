@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.carfinc.app.data.Collab
 import com.carfinc.app.data.Prefs
 import com.carfinc.app.data.Repo
 import com.carfinc.app.model.MatSize
@@ -64,17 +65,19 @@ import com.carfinc.app.model.Palette
 import com.carfinc.app.render.MatRenderer
 import com.carfinc.app.render.NoteArt
 import com.carfinc.app.render.StickerArt
+import com.carfinc.app.render.CutMode
 import com.carfinc.app.render.StickerImages
 import com.carfinc.app.util.Export
 import com.carfinc.app.util.Haptics
 import com.carfinc.app.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditorScreen(matId: String, onBack: () -> Unit) {
+fun EditorScreen(matId: String, openInvite: Boolean = false, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
@@ -92,13 +95,48 @@ fun EditorScreen(matId: String, onBack: () -> Unit) {
     var showRename by remember { mutableStateOf(false) }
     var showNote by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<String?>(null) }
+    var showCamera by remember { mutableStateOf(false) }
+    var camMode by remember { mutableStateOf(CutMode.PERSON) }
+    var camBusy by remember { mutableStateOf(false) }
+    var showInvite by remember { mutableStateOf(openInvite) }
+    var members by remember { mutableIntStateOf(Collab.memberCount(initial.code)) }
     val landscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var showWidgetHelp by remember { mutableStateOf(false) }
     var wallpaper by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
 
     // leaving the editor: save and refresh any widgets that show this mat
     DisposableEffect(matId) {
-        onDispose { state.persist(); WidgetUpdater.updateAll(ctx) }
+        onDispose {
+            state.persist(); WidgetUpdater.updateAll(ctx)
+            if (state.mat.collective) { val m = state.mat; Thread { Collab.sync(m) }.start() }
+        }
+    }
+
+    // collective mat: keep in sync with everyone else every few seconds
+    LaunchedEffect(state.mat.collective, state.mat.code) {
+        if (!state.mat.collective) return@LaunchedEffect
+        while (true) {
+            val snap = state.mat
+            val out = withContext(Dispatchers.IO) { Collab.sync(snap) }
+            if (out != null) { state.applyRemote(snap, out); members = out.members }
+            delay(3000)
+        }
+    }
+
+    val onCaptured: (android.graphics.Bitmap) -> Unit = { bmp ->
+        camBusy = true
+        scope.launch {
+            val id = withContext(Dispatchers.IO) { StickerImages.importBitmap(bmp, camMode) }
+            camBusy = false
+            if (id != null) { Haptics.confirm(view); state.addSticker(id) }
+            else {
+                Haptics.reject(view)
+                Toast.makeText(ctx,
+                    if (camMode == CutMode.PERSON) "Couldn't find a person. Try again, or switch to Object."
+                    else "Couldn't find a subject. Object mode needs Google Play services and internet the first time.",
+                    Toast.LENGTH_LONG).show()
+            }
+        }
     }
     BackHandler { onBack() }
 
@@ -114,7 +152,14 @@ fun EditorScreen(matId: String, onBack: () -> Unit) {
             ) {
                 Text(mat.name, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
                 Icon(Icons.Filled.KeyboardArrowDown, null, tint = Muted, modifier = Modifier.size(18.dp))
+                if (mat.collective) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Filled.Group, "Collective", tint = Green, modifier = Modifier.size(16.dp))
+                    Text("$members", color = Green, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
+            RoundIcon(Icons.Filled.GroupAdd, "Invite people") { Haptics.click(view); showInvite = true }
+            Spacer(Modifier.width(8.dp))
             RoundIcon(Icons.Filled.Widgets, "Add widget") {
                 Haptics.click(view)
                 state.persist()
@@ -186,17 +231,29 @@ fun EditorScreen(matId: String, onBack: () -> Unit) {
     if (!landscape) {
         Column(Modifier.fillMaxSize().background(Bg).systemBarsPadding()) {
             topBar()
+            if (showCamera) {
+                CameraPanel(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    camMode, camBusy, { camMode = it }, onCaptured) { showCamera = false }
+            }
             Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
                 MatCanvas(state, Modifier.fillMaxWidth())
                 Box(Modifier.align(Alignment.TopEnd)) { undoButton() }
             }
-            sliders()
-            contextRow()
-            toolbar()
+            if (!showCamera) {
+                sliders()
+                contextRow()
+                toolbar()
+            } else {
+                Spacer(Modifier.height(12.dp))
+            }
         }
     } else {
         // Landscape: the mat gets the whole left side, controls live in a scrollable panel on the right.
         Row(Modifier.fillMaxSize().background(Bg).systemBarsPadding()) {
+            if (showCamera) {
+                CameraPanel(Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
+                    camMode, camBusy, { camMode = it }, onCaptured) { showCamera = false }
+            }
             Box(Modifier.weight(1f).fillMaxHeight().padding(16.dp), contentAlignment = Alignment.Center) {
                 MatCanvas(state, Modifier)
                 Box(Modifier.align(Alignment.TopEnd)) { undoButton() }
@@ -233,9 +290,16 @@ fun EditorScreen(matId: String, onBack: () -> Unit) {
         )
     }
 
+    if (showInvite) {
+        InviteDialog(mat, members, onDismiss = { showInvite = false }) { code ->
+            state.markCollective(code)
+        }
+    }
+
     if (showStickers) {
         StickerSheet(
             onClose = { showStickers = false },
+            onCamera = { showStickers = false; showCamera = true },
             onPick = { id -> showStickers = false; Haptics.confirm(view); state.addSticker(id) },
             onImported = { id -> showStickers = false; Haptics.confirm(view); state.addSticker(id) }
         )
@@ -502,7 +566,7 @@ private fun HueDialog(initial: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StickerSheet(onClose: () -> Unit, onPick: (String) -> Unit, onImported: (String) -> Unit) {
+private fun StickerSheet(onClose: () -> Unit, onCamera: () -> Unit, onPick: (String) -> Unit, onImported: (String) -> Unit) {
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val tabs = listOf("My stickers") + StickerArt.categories.keys.toList()
@@ -546,6 +610,18 @@ private fun StickerSheet(onClose: () -> Unit, onPick: (String) -> Unit, onImport
                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (tab == "My stickers") {
+                    item {
+                        Box(
+                            Modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(Color.White)
+                                .clickable { Haptics.click(view); onCamera() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Filled.PhotoCamera, "Camera", tint = Green, modifier = Modifier.size(30.dp))
+                                Text("Camera", fontSize = 10.sp, color = Muted, textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
                     item {
                         Box(
                             Modifier.aspectRatio(1f).clip(RoundedCornerShape(16.dp)).background(Color.White)

@@ -25,6 +25,16 @@ object Prefs {
         get() = sp().getBoolean("haptics", true)
         set(v) { sp().edit().putBoolean("haptics", v).apply() }
 
+    /** Firebase Realtime Database URL used for collective mats (empty = not set up yet). */
+    var dbUrl: String
+        get() = sp().getString("dbUrl", "") ?: ""
+        set(v) { sp().edit().putString("dbUrl", v.trim()).apply() }
+
+    /** Anonymous id of this install, used to count members of a collective mat. */
+    val deviceId: String
+        get() = sp().getString("deviceId", null) ?: java.util.UUID.randomUUID().toString().take(12)
+            .also { sp().edit().putString("deviceId", it).apply() }
+
     /** The mat the user asked to pin as a widget; used when a new widget has no mapping yet. */
     var pendingWidgetMat: String?
         get() = sp().getString("pendingWidgetMat", null)

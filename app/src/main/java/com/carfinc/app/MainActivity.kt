@@ -23,7 +23,7 @@ import com.carfinc.app.ui.OnboardingScreen
 private sealed interface Screen {
     object Onboarding : Screen
     object Home : Screen
-    data class Editor(val id: String) : Screen
+    data class Editor(val id: String, val invite: Boolean = false) : Screen
 }
 
 class MainActivity : ComponentActivity() {
@@ -66,11 +66,11 @@ private fun App(requestedMat: String?, consume: () -> Unit) {
     when (val s = screen) {
         Screen.Onboarding -> OnboardingScreen { screen = Screen.Home }
         Screen.Home -> HomeScreen(
-            onOpen = { screen = Screen.Editor(it) },
+            onOpen = { id, invite -> screen = Screen.Editor(id, invite) },
             onReplayIntro = { screen = Screen.Onboarding }
         )
         is Screen.Editor -> {
-            EditorScreen(s.id) { screen = Screen.Home }
+            EditorScreen(s.id, s.invite) { screen = Screen.Home }
         }
     }
 }

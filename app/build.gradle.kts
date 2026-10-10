@@ -16,8 +16,8 @@ android {
         applicationId = "com.carfinc.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = (findProperty("versionCode") as String?)?.toIntOrNull() ?: 2
-        versionName = (findProperty("versionName") as String?) ?: "1.1.0"
+        versionCode = (findProperty("versionCode") as String?)?.toIntOrNull() ?: 3
+        versionName = (findProperty("versionName") as String?) ?: "1.2.0"
     }
 
     signingConfigs {
@@ -70,4 +70,12 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     // On-device person segmentation (model is bundled, works offline)
     implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+    // Camera "Object" mode: lifts any subject (book, drink, camera…); model comes from Google Play services
+    implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
+    // In-app live camera
+    val camerax = "1.3.4"
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
 }
